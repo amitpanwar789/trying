@@ -3,7 +3,6 @@ info:
   title: Location Service APIs
   version: 1.0.0
   description: >
-    Provides endpoints for safdasfsa sdfadfasdfsdg bakchodi (autocompmmlete) and location resolution.
     Designed for extensibility to support airports, cities, hotels, cabs, trains.
 
   contact:
