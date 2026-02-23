@@ -3,7 +3,7 @@ info:
   title: Location Service APIs
   version: 1.0.0
   description: >
-    Provides endpoints for search safsafsafdsafs (autocompmmlete) and location resolution.
+    Provides endpoints for search service (autocompmmlete) and location resolution.
     Designed for extensibility to support airports, cities, hotels, cabs, trains.
 
   contact:
