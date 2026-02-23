@@ -1,0 +1,861 @@
+openapi: 3.0.3
+info:
+  title: Location Service APIs
+  version: 1.0.0
+  description: >
+    Provides endpoints for search safsafsafdsafs (autocompmmlete) and location resolution.
+    Designed for extensibility to support airports, cities, hotels, cabs, trains.
+
+  contact:
+    name: Team-Integration-Platform
+    email: Team-Integration-Platform@serko.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: https://locations-service-v2-dev.noprd.eos-stack.cloud
+    description: "Dev Environment server"
+  - url: https://locations-service-v2-test.noprd.eos-stack.cloud
+    description: "Test Environment server"
+  - url: https://locations-service-v2-stage.noprd.eos-stack.cloud
+    description: "Stage Environment server"
+  - url: https://prd-platform-ne.azure-api.net/geo
+    description: "Production Environment server"
+
+security: []
+
+paths:
+  /search/suggestions:
+    get:
+      tags: [Suggestions]
+      operationId: getSuggestions
+      summary: Get autosuggest results
+      # description: >
+      #   Returns a list of autosuggest results (airports, cities, etc.)
+      #   based on the user query and filters.
+      #   For now, the service primarily supports airports and cities;
+      #   additional types are placeholders for forward compatibility.
+        
+      #    ### Contextual Headers
+      #   The following headers will be automatically injected by the API Gateway
+      #   - `X-User-Region`: ISO 3166-1 alpha-2 region code (e.g., IN)
+      #   - `X-User-Language`: user’s preferred language (e.g., en-IN)
+      #   - `X-User-Latitude`: user’s approximate latitude (decimal)
+      #   - `X-User-Longitude`: user’s approximate longitude (decimal)
+        
+      #   These headers will be used internally for personalization and proximity ranking.
+
+      parameters:
+        - $ref: '#/components/parameters/XUserRegion'
+        - $ref: '#/components/parameters/XUserLanguage'
+        - $ref: '#/components/parameters/XUserLatitude'
+        - $ref: '#/components/parameters/XUserLongitude'
+        - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/Query'
+        - $ref: '#/components/parameters/FilterTypes'
+        - $ref: '#/components/parameters/Radius'
+        # - $ref: '#/components/parameters/AccessToken'
+        # - $ref: '#/components/parameters/PageSize'
+        # - $ref: '#/components/parameters/PageToken'
+
+      responses:
+        "200":
+          description: Successful response with suggestions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestionResponse'
+        "400":
+          description:  Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                MissingQuery:
+                  value:
+                    code: INVALID_REQUEST
+                    message: Missing required parameter
+                    details:
+                      - "The query parameter is required."
+        "429":
+          description: Rate limit exceeded
+          headers:
+            Retry-After:
+              description: Seconds until the client should retry.
+              schema: { type: integer, minimum: 1, description: "Seconds to wait" }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                TooMany:
+                  value:
+                    code: RATE_LIMIT_EXCEEDED
+                    message: Too many requests. Please retry later.
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                Internal:
+                  value:
+                    code: INTERNAL_ERROR
+                    message: Unexpected server error
+
+  /locations/resolve:
+    post:
+      tags: [Resolution]
+      operationId: resolveLocations
+      summary: Resolve locations into canonical entities
+      description: |
+        Takes input values (codes or names) and returns normalized canonical entities.  
+        MVP supports airports; future extensions will include hotels.
+      parameters:
+        - $ref: '#/components/parameters/XRequestID'
+        - $ref: '#/components/parameters/XUserLanguage'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveRequest'
+
+            examples:
+              MixedBatchLookup:
+                summary: "Valid IATA query, Invalid IATA query and Geo Resolve"
+                value:
+                  lookups:
+                    - locationType: "airport"
+                      query: "LAX"
+                      queryLanguage: "en"
+                    # Invalid IATA Code
+                    - locationType: "airport"
+                      query: "ZZZ"
+                    - locationType: "airport"
+                      refId: "geo-resolve-1"
+                      geo:
+                        lat: 40.6413
+                        lon: -73.7781
+              QueryLookupOnly:
+                summary: "Valid IATA code lookup"
+                value:
+                  lookups:
+                    - locationType: "airport"
+                      query: "BLR"
+                      queryLanguage: "en"
+                    - locationType: "airport"
+                      query: "CCU"
+                      queryLanguage: "en"
+              GeoLookupOnly:
+                summary: "Geo lookup"
+                value:
+                  lookups:
+                    - locationType: "airport"
+                      refId: "geo-resolve-2"
+                      geo:
+                        lat: 51.4700
+                        lon: -0.4543
+
+      responses:
+        '200':
+          description: Successful resolution (complete or partial)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveResponse'
+
+              # === RESPONSE EXAMPLE ===
+              examples:
+                MixedResults:
+                  summary: "Mixed: 2 Resolved, 1 Unresolved"
+                  value:
+                    status:
+                      complete: true
+                      resolvedCount: 2
+                      unresolvedCount: 1
+                      total: 3
+                      timestamp: "2023-11-01T12:00:00Z"
+                    resolved:
+                      "LHR":
+                        - id: "a1b2c3d4-e5f6-7890-a1b2-c3d4e5f67890"
+                          locationType: "airport"
+                          name: "Heathrow Airport"
+                          city: "London"
+                          country: "United Kingdom"
+                          iata: "LHR"
+                          geo: { lat: 51.4700, lon: -0.4543 }
+                          nameTranslations:
+                            name: "Heathrow Airport"
+                            city: "London"
+                            country: "United Kingdom"
+                            meta: {}
+                          meta: {}
+                      "geo-resolve-1":
+                        - id: "b2c3d4e5-f6a7-8901-b2c3-d4e5f6a78901"
+                          locationType: "airport"
+                          name: "JFK International Airport"
+                          city: "New York"
+                          country: "United States"
+                          iata: "JFK"
+                          geo: { lat: 40.6413, lon: -73.7781 }
+                          nameTranslations:
+                            name: "JFK Airport"
+                            city: "New York"
+                            country: "USA"
+                            meta: {}
+                          meta: { }
+                    unresolved:
+                      "ZZZ":
+                        - query: "ZZZ"
+                          locationType: "airport"
+                          error:
+                            code: "ENTITY_NOT_FOUND"
+                            message: "Could not resolve entity for provided query"
+                            details: ["Please verify the input and try again."]
+                    responseMeta:
+                      requestId: "req-12345"
+                      processingTimeInMs: 120
+                      languageContext:
+                        requestedLanguage: "en-US"
+                        effectiveLanguage: "en"
+                        fallbackUsed: false
+                        meta: {}
+
+
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: INVALID_REQUEST
+                message: The field query is required.
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: UNAUTHORIZED
+                message: Authorization token missing or invalid.
+        '404':
+          description: Entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: ENTITY_NOT_FOUND
+                message: Could not resolve entity for code 'XYZ'.
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: INTERNAL_ERROR
+                message: Unexpected server error. Please try again later.
+
+components:
+
+  parameters:
+
+    # ===================================
+    # Headers from API Gateway
+    # ===================================
+
+    XUserRegion:
+      name: X-User-Region
+      in: header
+      required: false
+      description: >
+        ISO 3166-1 alpha-2 region code automatically injected by the API Gateway.  
+        Used for localization, ranking, and compliance (e.g., IN, US, NZ).
+      x-pattern-message: "Region must be a valid ISO 3166-1 alpha-2 code (e.g., 'US', 'IN')."
+      schema:
+        type: string
+        description: Region code.
+        pattern: '^[A-Z]{2}$'
+        example: IN
+      x-internal: true
+      x-headers-group: "gateway-context"
+
+    XUserLanguage:
+      name: X-User-Language
+      in: header
+      required: false
+      description: >
+        User’s preferred language, following BCP-47 (e.g., en, en-IN, fr-FR).  
+        Auto-injected by Gateway for localization and translation logic.
+      x-pattern-message: "Language must be a valid BCP-47 code (e.g., 'en', 'en-US')."
+      schema:
+        type: string
+        description: Language code.
+        pattern: '^[a-z]{2,3}(-[A-Z]{2})?$'
+        example: en
+      x-internal: true
+      x-headers-group: "gateway-context"
+
+    XUserLatitude:
+      name: X-User-Latitude
+      in: header
+      required: false
+      description: >
+        User’s approximate latitude in decimal degrees.  
+        Auto-detected by Gateway (e.g., via IP geolocation).
+      x-minimum-message: "Latitude must be greater than or equal to -90."
+      x-maximum-message: "Latitude must be less than or equal to 90."
+      schema:
+        type: number
+        format: float
+        description: Latitude value.
+        minimum: -90
+        maximum: 90
+        example: 28.6139
+      x-internal: true
+      x-headers-group: "gateway-context"
+
+    XUserLongitude:
+      name: X-User-Longitude
+      in: header
+      required: false
+      description: >
+        User’s approximate longitude in decimal degrees.  
+        Auto-detected by Gateway (e.g., via IP geolocation).
+      x-minimum-message: "Longitude must be greater than or equal to -180."
+      x-maximum-message: "Longitude must be less than or equal to 180."
+      schema:
+        type: number
+        format: float
+        description: Longitude value.
+        minimum: -180
+        maximum: 180
+        example: 77.2090
+      x-internal: true
+      x-headers-group: "gateway-context"
+
+    XRequestID:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        description: Request ID for tracing.
+      description: >
+        Optional correlation ID for distributed tracing and observability.
+        Used for linking logs, metrics, and downstream calls.
+      example: req-12345
+      x-internal: true
+      x-headers-group: "gateway-context"
+
+    # =============================
+    # Suggestions Requests & Models
+    # =============================
+    Query:
+      name: query
+      in: query
+      required: true
+      description: >
+        User input text (code or name fragment). Min 3, max 64 characters.
+      x-pattern-message: "Query must contain only alphabets and spaces."
+      x-size-message: "Query must be between 3 and 64 characters."
+      example: bom
+      schema:
+        type: string
+        description: Search query text.
+        minLength: 3
+        maxLength: 64
+        pattern: '^[\p{L}\s]+$'
+        example: AKL
+
+    FilterTypes:
+      name: filterTypes
+      in: query
+      required: true
+      description: >
+        One or more entity types to search. Use comma-separated values.
+        Current: airport, city. Future (placeholders): hotel, cab, train.
+      style: form
+      explode: false
+      schema:
+        type: array
+        description: List of types to filter by.
+        items:
+          type: string
+          description: Entity type.
+          enum: [airport, city, hotel, cab, train]
+        example: [airport]
+
+    Radius:
+      name: radius
+      in: query
+      required: false
+      description: >
+        Radius in kilometers to consider the nearby airports if the input provided by user doesnt have an airport.
+      x-minimum-message: "Radius must be at least 1 km."
+      x-maximum-message: "Radius must not exceed 1000 km."
+      schema:
+        type: integer
+        description: Search radius in km.
+        minimum: 1
+        maximum: 1000
+        default: 50
+        example: 100
+
+  #    PageSize:
+  #      name: pageSize
+  #      in: query
+  #      required: false
+  #      description: Maximum number of results to return (1–50). Default 10.
+  #      schema:
+  #        type: integer
+  #        minimum: 1
+  #        maximum: 50
+  #        default: 10
+  #        example: 5
+  #
+  #     PageToken:
+  #       name: pageToken
+  #       in: query
+  #       required: false
+  #       description: >
+  #         Token for pagination (opaque to clients).
+  #         Internally may contain: {"offset": 4, "lastId": "MLB", "accessToken": "abc123xyz"}
+  #       schema:
+  #         type: string
+  #         example: eyJvZmZzZXQiOjEwfQ==
+  #
+  #     AccessToken:
+  #       name: accessToken
+  #       in: header
+  #       required: false
+  #       description: >
+  #         Opaque token to group related requests for session-based ranking.
+  #         Should be consistent across requests in the same user session.
+  #       schema:
+  #         type: string
+  #         example: abc123xyz
+
+  schemas:
+
+    # =====================
+    # Suggestion Response
+    # =====================
+
+    SuggestionResponse:
+      type: object
+      description: Response object containing search suggestions.
+      required: [query, results, responseMeta]
+      properties:
+        query:
+          type: string
+          description: The original query text.
+          example: AKL
+        context:
+          $ref: '#/components/schemas/SuggestionContext'
+        results:
+          type: array
+          description: List of suggestion results.
+          items:
+            $ref: '#/components/schemas/SuggestionResults'
+        responseMeta:
+          $ref: '#/components/schemas/ResponseMeta'
+        # nextPageToken:
+        #   type: string
+        #   nullable: true
+        #   example: eyJvZmZzZXQiOjE1fQ==
+
+    SuggestionContext:
+      type: object
+      description: Contextual information about the suggestion request.
+      properties:
+        region:
+          type: string
+          description: User region detected.
+          example: IN
+        language:
+          type: string
+          description: User language detected.
+          example: en
+
+    # === SuggestionResult Polymorphic Container ===
+    SuggestionResults:
+      type: object
+      description: >
+        A polymorphic container that returns a specific suggestion entity based on the category.
+      properties:
+        locationType:
+          $ref: '#/components/schemas/LocationTypeEnum'
+      oneOf:
+        - $ref: '#/components/schemas/SuggestedAirport'
+        # - $ref: '#/components/schemas/SuggestedCity'
+      discriminator:
+        propertyName: locationType
+        mapping:
+          airport: '#/components/schemas/SuggestedAirport'
+          # city: '#/components/schemas/SuggestedCity'
+
+    # === Concrete Suggestion Entity Schemas ===
+    SuggestedAirport:
+      type: object
+      description: Airport returned in the  search suggestion response.
+      required: [name, city, country, iata, locationType]
+      properties:
+        locationType:
+          allOf:
+            - $ref: '#/components/schemas/LocationTypeEnum'
+          enum: [airport]
+          description: Type of location value.
+        #        id:
+        #          type: string
+        ##          format: uuid
+        #          example: "123e4567-e89b-12d3-a456-426614174000"
+        name:
+          type: string
+          description: Name of the airport.
+          example: Auckland International Airport
+        city:
+          type: string
+          description: City where the airport is located.
+          example: Auckland
+        country:
+          type: string
+          description: Country where the airport is located.
+          example: New Zealand
+        iata:
+          type: string
+          description: IATA code for the airport.
+          nullable: true
+          example: AKL
+        translations:
+          $ref: '#/components/schemas/NameTranslations'
+        geo:
+          $ref: '#/components/schemas/GeoCoordinates'
+        score:
+          type: number
+          format: float
+          example: 0.98
+          description: Relevance score for the suggestion.
+        meta:
+          $ref: '#/components/schemas/AdditionalMetadata'
+
+    # =========================
+    # Resolve Requests & Inputs
+    # =========================
+
+    ResolveRequest:
+      type: object
+      description: Request payload for resolving location entities.
+      required: [lookups]
+      properties:
+        lookups:
+          type: array
+          description: >
+            List of entities to resolve (max 25 per request).
+          x-size-message: "Lookups list must contain between 1 and 25 items."
+          minItems: 1
+          maxItems: 25
+          items:
+            $ref: '#/components/schemas/LookupItem'
+
+    LookupItem:
+      type: object
+      description: >
+        Input to resolve. 
+        **Constraint:** You must provide either `query` (for text search) OR `geo` + `refId` (for location search), but not both.
+      required: [ locationType ]
+      properties:
+        locationType:
+          $ref: '#/components/schemas/LocationTypeEnum'
+
+        # --- Option A: Text Lookup ---
+        query:
+          type: string
+          nullable: true
+          minLength: 3
+          maxLength: 128
+          x-size-message: "Query must be between 3 and 128 characters."
+          description: "The text identifier (e.g. IATA code 'AKL'). Required if 'geo' is missing."
+          example: AKL
+        queryLanguage:
+          type: string
+          description: "Language of the `query` text, following BCP-47 (e.g., en, fr-FR). Optional; defaults to 'en' if missing."
+          nullable: true
+          default: "en"
+          x-pattern-message: "Query language must be a valid BCP-47 code (e.g., 'en', 'en-US')."
+          pattern: '^[a-z]{2,3}(-[A-Z]{2})?$'
+          example: "en"
+
+        # --- Option B: Geo Lookup ---
+        geo:
+          $ref: '#/components/schemas/GeoCoordinates'
+          description: "Coordinates for reverse geocoding. Required if 'query' is missing."
+        refId:
+          type: string
+          nullable: true
+          maxLength: 64
+          x-size-message: "RefId must be at most 64 characters."
+          description: "Unique identifier for this lookup item. Required if 'geo' is provided to map the response."
+          example: "geo-ref-1"
+
+
+
+    # ==========================
+    # Resolve Responses & Models
+    # ==========================
+
+    ResolveResponse:
+      type: object
+      description: Structure of the location resolution response.
+      properties:
+        status:
+          $ref: '#/components/schemas/StatusInfo'
+        resolved:
+          type: object
+          description: >
+            A map where the **Key** is the exact `query` string sent in the request.
+            The **Value** is the list of resolved entities for that query.
+            In case of geo lookup, key will be `refId`.
+          additionalProperties:
+            type: array
+            description: List of resolved locations for a query.
+            items:
+              $ref: '#/components/schemas/ResolvedLocations'
+
+        unresolved:
+          type: object
+          description: >
+            A map where the **Key** is the failed `query` string.
+            The **Value** contains error details.
+          additionalProperties:
+            type: array
+            description: Error details for a failed query resolution.
+            items:
+              $ref: '#/components/schemas/UnresolvedLocations'
+        responseMeta:
+          $ref: '#/components/schemas/ResponseMeta'
+
+    StatusInfo:
+      type: object
+      description: Summary status of the resolution request.
+      properties:
+        complete:
+          type: boolean
+          description: Indicates if all lookups were resolved.
+        resolvedCount:
+          type: integer
+          description: >
+            Describes the count of resolved locations.
+        unresolvedCount:
+          type: integer
+          description: >
+            Describes the count of unresolved locations.
+        total:
+          type: integer
+          description: >
+            Sum total of resolved and unresolved locations.
+        timestamp:
+          type: string
+          format: date-time
+          description: >
+            Timestamp in strict UTC format.
+
+    # Polymorphic entity — add new concrete types over time.
+    ResolvedLocations:
+      description: Polymorphic container for any resolved entity (Airport, City, etc.).
+      oneOf:
+        - $ref: '#/components/schemas/ResolvedAirport'
+      discriminator:
+        propertyName: locationType
+        mapping:
+          airport: '#/components/schemas/ResolvedAirport'
+
+    ResolvedAirport:
+      type: object
+      description: Details of a resolved airport entity.
+      additionalProperties: false
+      required: [name, city, iata,locationType]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+          description: Unique identifier for the airport.
+        locationType:
+          allOf:
+            - $ref: '#/components/schemas/LocationTypeEnum'
+          enum: [airport]    # <--- STRICTLY limits this object to 'airport'
+          description: Fixed discriminator value.
+        name:
+          type: string
+          example: Auckland International Airport
+        city:
+          type: string
+          description: City where the airport is located.
+          example: Auckland
+        country:
+          type: string
+          description: Country where the airport is located.
+          example: New Zealand
+        iata:
+          type: string
+          description: 3-letter IATA code of the airport.
+          pattern: '^[A-Z]{3}$'
+          example: AKL
+        nameTranslations:
+          $ref: '#/components/schemas/NameTranslations'
+        geo:
+          $ref: '#/components/schemas/GeoCoordinates'
+        meta:
+          $ref: '#/components/schemas/AdditionalMetadata'
+
+    UnresolvedLocations:
+      type: object
+      description: Details of an unresolved entity.
+      properties:
+        query:
+          type: string
+          example: "XYZ"
+          description: The original query or refId that failed to resolve.
+        locationType:
+          $ref: '#/components/schemas/LocationTypeEnum'
+        error:
+          $ref: '#/components/schemas/ErrorResponse'
+
+    NameTranslations:
+      type: object
+      description: >
+        Contains localized display strings for the entity's core attributes
+        based on the user's requested language (`X-User-Language`).
+      properties:
+        name:
+          type: string
+          description: Localized name of the location.
+        city:
+          type: string
+          description: Localized city name.
+        country:
+          type: string
+          description: Localized country name.
+        meta:
+          $ref: '#/components/schemas/AdditionalMetadata'
+
+    # =======================
+    # Shared
+    # =======================
+    AdditionalMetadata:
+      type: object
+      additionalProperties: true
+      description: >
+        Flexible metadata stub, used as placeholder for future changes.
+
+    GeoCoordinates:
+      type: object
+      description: Geographic coordinates of the location.
+      required:
+        - lat
+        - lon
+      properties:
+        lat:
+          type: number
+          description: Latitude coordinate.
+          minimum: -90
+          maximum: 90
+          x-minimum-message: "Latitude must be greater than or equal to -90."
+          x-maximum-message: "Latitude must be less than or equal to 90."
+          example: -37.7749
+        lon:
+          type: number
+          description: Longitude coordinate.
+          minimum: -180
+          maximum: 180
+          x-minimum-message: "Longitude must be greater than or equal to -180."
+          x-maximum-message: "Longitude must be less than or equal to 180."
+          example: 144.9631
+
+    ResponseMeta:
+      type: object
+      description: Response metadata for tracing and performance.
+      properties:
+        requestId: 
+          type: string
+          example: req-12345
+          description: Unique identifier for the request trace.
+        processingTimeInMs: 
+          type: integer
+          example: 42
+          description: Processing time in milliseconds.
+        languageContext:
+          $ref: '#/components/schemas/LanguageContext'
+
+    LocationTypeEnum:
+      type: string
+      description: Type of entity to resolve.
+      enum: [airport, city, hotel, train, cab]
+      example: airport
+
+    LanguageContext:
+      type: object
+      description: >
+        Describes how multilingual support and fallback were applied when preparing multilingual content.
+        Keeps track of which language was actually used and whether a fallback occurred.
+      required: [effectiveLanguage, fallbackUsed]
+      properties:
+        requestedLanguage:
+          type: string
+          nullable: true
+          example: "hi-IN"
+          description: >
+            Language requested by the client (from `X-User-Language` header).
+            Null if the client did not specify any language.
+        effectiveLanguage:
+          type: string
+          example: "EN"
+          description: >
+            The language actually used to serve the localized data.
+            Always one of the supported system languages.
+        fallbackUsed:
+          type: boolean
+          example: false
+          description: >
+            True if requested language data was unavailable and a fallback was used.
+        meta:
+          $ref: '#/components/schemas/AdditionalMetadata'
+
+    # =======================
+    # Errors
+    # =======================
+    ErrorCode:
+      type: string
+      description: Standardized error code for the response.
+      enum:
+        - INVALID_REQUEST
+        - ENTITY_NOT_FOUND
+        - UNAUTHORIZED
+        - INTERNAL_ERROR
+        - REQUEST_TOO_LARGE
+        - RATE_LIMIT_EXCEEDED
+        - RESOURCE_NOT_FOUND
+
+    ErrorResponse:
+      type: object
+      description: Standard error response structure.
+      required: [code, message]
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message: 
+          type: string
+          description: A descriptive message for the error.
+        details:
+          type: array
+          description: Additional details about the error.
+          items: 
+            type: string
+            description: A specific error detail message.
