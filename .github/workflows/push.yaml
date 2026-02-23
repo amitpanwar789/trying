@@ -3,7 +3,7 @@ name: 'Push to Redocly'
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths: ['api-spec/location-spec.yaml']
 
 jobs:
