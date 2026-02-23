@@ -1,0 +1,27 @@
+name: 'Push to Redocly'
+
+
+on:
+  push:
+    branches: [master]
+    paths: ['api-spec/location-spec.yaml']
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: 'Push files and wait for deployment'
+        uses: redocly/reunite-push-action@v1
+        with:
+          organization: 'samusamu'
+          project: 'demo-teste'
+          mountPath: '/api-reference/locations'
+          files: 'api-spec/location-spec.yaml'
+          domain: 'https://app.cloud.redocly.com'
+        env:
+          REDOCLY_AUTHORIZATION: ${{ secrets.REDOCLY_AUTHORIZATION }}
