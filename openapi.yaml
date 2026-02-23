@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Location Service APIs
+  title: Location Service asfsdfa
   version: 1.0.0
   description: >
     Provides endpoints for search service (autocompmmlete) and location resolution.
